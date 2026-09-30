@@ -30,10 +30,10 @@ CREATE TYPE post_type_enum AS ENUM (
 
 CREATE TABLE app_user
 (
-    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                UUID PRIMARY KEY,
 
-    name              VARCHAR(100)        NOT NULL,
-    last_name         VARCHAR(100)        NOT NULL,
+    name              VARCHAR(10)         NOT NULL,
+    last_name         VARCHAR(10)         NOT NULL,
 
     email             VARCHAR(150)        NOT NULL UNIQUE,
     password_hash     VARCHAR(255)        NOT NULL,
@@ -47,7 +47,13 @@ CREATE TABLE app_user
         DEFAULT 'USER',
 
     account_status    account_status_enum NOT NULL
-        DEFAULT 'ACTIVE'
+        DEFAULT 'ACTIVE',
+
+    CONSTRAINT chk_user_name_length
+        CHECK (char_length(name) BETWEEN 3 AND 10),
+
+    CONSTRAINT chk_user_last_name_length
+        CHECK (char_length(last_name) BETWEEN 3 AND 10)
 );
 
 
@@ -57,7 +63,7 @@ CREATE TABLE app_user
 
 CREATE TABLE animal_type
 (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id          UUID PRIMARY KEY,
 
     title       VARCHAR(100) NOT NULL UNIQUE,
 
@@ -71,7 +77,7 @@ CREATE TABLE animal_type
 
 CREATE TABLE publication_status
 (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id          UUID PRIMARY KEY,
 
     title       VARCHAR(100) NOT NULL UNIQUE,
 
@@ -85,7 +91,7 @@ CREATE TABLE publication_status
 
 CREATE TABLE location
 (
-    id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id        UUID PRIMARY KEY,
 
     latitude  NUMERIC(9, 6) NOT NULL,
 
@@ -105,9 +111,9 @@ CREATE TABLE location
 
 CREATE TABLE post
 (
-    id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                    UUID PRIMARY KEY,
 
-    user_id               BIGINT         NOT NULL,
+    user_id               UUID         NOT NULL,
 
     title                 VARCHAR(150)   NOT NULL,
 
@@ -115,7 +121,7 @@ CREATE TABLE post
 
     description           TEXT           NOT NULL,
 
-    animal_type_id        BIGINT         NOT NULL,
+    animal_type_id        UUID         NOT NULL,
 
     created_date          TIMESTAMPTZ    NOT NULL
         DEFAULT CURRENT_TIMESTAMP,
@@ -123,7 +129,7 @@ CREATE TABLE post
     last_update           TIMESTAMPTZ    NOT NULL
         DEFAULT CURRENT_TIMESTAMP,
 
-    publication_status_id BIGINT         NOT NULL,
+    publication_status_id UUID         NOT NULL,
 
     is_safekeeping        BOOLEAN        NOT NULL
         DEFAULT FALSE,
@@ -132,7 +138,7 @@ CREATE TABLE post
 
     post_type             post_type_enum NOT NULL,
 
-    location_id           BIGINT         NOT NULL,
+    location_id           UUID         NOT NULL,
 
     search_radius         NUMERIC(6, 2)  NOT NULL,
 
@@ -171,7 +177,7 @@ CREATE TABLE post
 
 CREATE TABLE tag
 (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id          UUID PRIMARY KEY,
 
     title       VARCHAR(100) NOT NULL UNIQUE,
 
@@ -186,9 +192,9 @@ CREATE TABLE tag
 
 CREATE TABLE post_tag
 (
-    post_id BIGINT NOT NULL,
+    post_id UUID NOT NULL,
 
-    tag_id  BIGINT NOT NULL,
+    tag_id  UUID NOT NULL,
 
     PRIMARY KEY (post_id, tag_id),
 
@@ -210,11 +216,11 @@ CREATE TABLE post_tag
 
 CREATE TABLE moderation
 (
-    id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                    UUID PRIMARY KEY,
 
-    post_id               BIGINT      NOT NULL,
+    post_id               UUID        NOT NULL,
 
-    admin_id              BIGINT      NOT NULL,
+    admin_id              UUID        NOT NULL,
 
     action                VARCHAR(50) NOT NULL,
 
@@ -225,7 +231,7 @@ CREATE TABLE moderation
     reason_date           TIMESTAMPTZ NOT NULL
         DEFAULT CURRENT_TIMESTAMP,
 
-    publication_status_id BIGINT,
+    publication_status_id UUID,
 
     -- =====================================
     -- FOREIGN KEYS
@@ -278,30 +284,38 @@ CREATE INDEX idx_moderation_admin_id
 
 
 -- =========================================
--- 11. INITIAL PUBLICATION STATUSES
+-- 11. INITIAL PUBLICATION STATUS
 -- =========================================
 
-INSERT INTO publication_status (title, description)
-VALUES ('ACTIVE',
-        'Publication is active and visible'),
-       ('RESOLVED',
-        'Animal has been found or reunited with its owner'),
-       ('CLOSED',
-        'Publication has been closed by the user'),
-       ('REMOVED',
-        'Publication has been removed by an administrator');
+INSERT INTO publication_status (id, title, description)
+VALUES
+    (gen_random_uuid(), 'ACTIVE',
+     'Publication is active and visible'),
+
+    (gen_random_uuid(), 'RESOLVED',
+     'Animal has been found or reunited with its owner'),
+
+    (gen_random_uuid(), 'CLOSED',
+     'Publication has been closed by the user'),
+
+    (gen_random_uuid(), 'REMOVED',
+     'Publication has been removed by an administrator');
 
 
 -- =========================================
--- 12. INITIAL ANIMAL TYPES
+-- 12. INITIAL ANIMAL TYPE
 -- =========================================
 
-INSERT INTO animal_type (title, description)
-VALUES ('DOG',
-        'Dog'),
-       ('CAT',
-        'Cat'),
-       ('BIRD',
-        'Bird'),
-       ('OTHER',
-        'Other animal');
+INSERT INTO animal_type (id, title, description)
+VALUES
+    (gen_random_uuid(), 'DOG',
+     'Dog'),
+
+    (gen_random_uuid(), 'CAT',
+     'Cat'),
+
+    (gen_random_uuid(), 'BIRD',
+     'Bird'),
+
+    (gen_random_uuid(), 'OTHER',
+     'Other animal');
