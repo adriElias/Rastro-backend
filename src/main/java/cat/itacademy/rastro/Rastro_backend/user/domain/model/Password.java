@@ -1,8 +1,5 @@
 package cat.itacademy.rastro.Rastro_backend.user.domain.model;
 
-<<<<<<< Updated upstream
-public class Password {
-=======
 public record Password(String value) {
     public Password {
         if (value.length() < 5) {
@@ -17,5 +14,4 @@ public record Password(String value) {
             );
         }
     }
->>>>>>> Stashed changes
 }
