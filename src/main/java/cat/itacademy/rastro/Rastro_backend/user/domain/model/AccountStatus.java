@@ -1,4 +1,6 @@
 package cat.itacademy.rastro.Rastro_backend.user.domain.model;
 
-public class AccountStatus {
+public enum AccountStatus {
+    ACTIVE,
+    BLOCKED
 }

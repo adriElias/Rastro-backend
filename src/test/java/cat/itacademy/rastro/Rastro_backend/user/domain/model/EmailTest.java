@@ -73,4 +73,23 @@ public class EmailTest {
                 () -> new Email("adriana@example.")
         );
     }
+
+    @Test
+    void shouldAcceptEmailWithOneHundredAndFiftyCharacters() {
+        String value = "a".repeat(138) + "@example.com";
+
+        Email email = new Email(value);
+
+        assertEquals(150, email.value().length());
+    }
+
+    @Test
+    void shouldRejectEmailLongerThanOneHundredAndFiftyCharacters() {
+        String value = "a".repeat(139) + "@example.com";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new Email(value)
+        );
+    }
 }
