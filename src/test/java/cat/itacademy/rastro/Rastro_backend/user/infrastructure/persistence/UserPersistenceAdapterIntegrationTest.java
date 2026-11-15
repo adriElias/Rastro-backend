@@ -33,7 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Testcontainers
 @SpringBootTest(properties = {
         "spring.jpa.hibernate.ddl-auto=none",
-        "spring.sql.init.mode=never"
+        "spring.sql.init.mode=never",
+        "JWT_SECRET=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+        "JWT_ISSUER=rastro-backend",
+        "JWT_ACCESS_TOKEN_TTL_SECONDS=900"
 })
 class UserPersistenceAdapterIntegrationTest {
 

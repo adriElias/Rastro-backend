@@ -1,12 +1,14 @@
-
 package cat.itacademy.rastro.Rastro_backend.user.infrastructure.security;
 
 import cat.itacademy.rastro.Rastro_backend.user.domain.model.Password;
 import cat.itacademy.rastro.Rastro_backend.user.domain.model.PasswordHash;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.bcrypt.BCrypt;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BCryptPasswordHasherTest {
 
@@ -15,6 +17,7 @@ class BCryptPasswordHasherTest {
             "^\\$2[ayb]\\$10\\$[./0-9A-Za-z]{53}$";
 
     private final BCryptPasswordHasher passwordHasher = new BCryptPasswordHasher();
+    private final BCryptPasswordVerifier passwordVerifier = new BCryptPasswordVerifier();
 
     @Test
     void shouldGenerateHashDifferentFromPlaintext() {
@@ -31,17 +34,17 @@ class BCryptPasswordHasherTest {
     }
 
     @Test
-    void shouldGenerateHashAcceptedByBCrypt() {
+    void shouldGenerateHashAcceptedByExistingPasswordVerifier() {
         PasswordHash passwordHash = passwordHasher.hash(new Password(RAW_PASSWORD));
 
-        assertTrue(BCrypt.checkpw(RAW_PASSWORD, passwordHash.value()));
+        assertTrue(passwordVerifier.matches(RAW_PASSWORD, passwordHash));
     }
 
     @Test
     void shouldGenerateHashThatRejectsIncorrectPassword() {
         PasswordHash passwordHash = passwordHasher.hash(new Password(RAW_PASSWORD));
 
-        assertFalse(BCrypt.checkpw("incorrect-password", passwordHash.value()));
+        assertFalse(passwordVerifier.matches("incorrect-password", passwordHash));
     }
 
     @Test
@@ -52,8 +55,8 @@ class BCryptPasswordHasherTest {
         PasswordHash secondHash = passwordHasher.hash(password);
 
         assertNotEquals(firstHash, secondHash);
-        assertTrue(BCrypt.checkpw(RAW_PASSWORD, firstHash.value()));
-        assertTrue(BCrypt.checkpw(RAW_PASSWORD, secondHash.value()));
+        assertTrue(passwordVerifier.matches(RAW_PASSWORD, firstHash));
+        assertTrue(passwordVerifier.matches(RAW_PASSWORD, secondHash));
     }
 
     @Test
@@ -79,11 +82,10 @@ class BCryptPasswordHasherTest {
         Password seventyTwoBytePassword = new Password("a".repeat(71) + "1");
         String seventyThreeBytePassword = "a".repeat(72) + "1";
 
-        assertTrue(BCrypt.checkpw(
+        assertTrue(passwordVerifier.matches(
                 seventyTwoBytePassword.value(),
-                passwordHasher.hash(seventyTwoBytePassword).value()
+                passwordHasher.hash(seventyTwoBytePassword)
         ));
-
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new Password(seventyThreeBytePassword)

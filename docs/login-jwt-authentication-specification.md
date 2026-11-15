@@ -209,7 +209,7 @@ The backend shall validate `issued-at` and expiration semantics according to the
 
 ### SR-04 Issuer and Audience Validation
 
-The backend shall validate that every accepted JWT contains the issuer (`iss`) value `rastro-api`.
+The backend shall validate that every accepted JWT contains the issuer (`iss`) value `rastro-backend`.
 
 Tokens with a missing or different issuer must be rejected.
 
@@ -423,7 +423,7 @@ Responsibilities:
 - Preserve public access to the existing US-01 registration endpoint, using the exact route defined in `RegisterController`.
 - Protect endpoints that require authentication.
 - Configure JWT authentication using Bearer tokens.
-- Validate JWT signatures, expiration, issuer (`rastro-api`), and the explicitly allowed HS256 algorithm.
+- Validate JWT signatures, expiration, issuer (`rastro-backend`), and the explicitly allowed HS256 algorithm.
 - Map authentication failures to HTTP `401 Unauthorized`.
 - Map authorization failures to HTTP `403 Forbidden`.
 - Support role-based authorization for `USER` and `ADMIN`.
@@ -506,7 +506,7 @@ The JWT implementation shall use the following configuration:
 
 | Property | Value | Requirement |
 |---|---|---|
-| `JWT_ISSUER` | `rastro-api` | Approved issuer |
+| `JWT_ISSUER` | `rastro-backend` | Approved issuer |
 | `JWT_SECRET` | Base64-encoded cryptographically random secret | Decoded key must contain at least 32 bytes (256 bits) for HS256 |
 | `JWT_ACCESS_TOKEN_TTL_SECONDS` | `900` | 15-minute access token lifetime |
 
@@ -516,7 +516,7 @@ JWT validation shall enforce:
 
 - A valid cryptographic signature.
 - The explicitly configured HS256 algorithm.
-- The issuer `rastro-api`.
+- The issuer `rastro-backend`.
 - Token expiration.
 - Required authentication claims.
 
@@ -738,7 +738,7 @@ Test:
 
 - JWT issuance with the user's UUID as `sub`.
 - Inclusion of the `role` claim.
-- Issuer set to `rastro-api`.
+- Issuer set to `rastro-backend`.
 - Access-token lifetime of 900 seconds.
 - Valid JWT signature verification.
 - Rejection of expired tokens.
@@ -966,7 +966,7 @@ The following decisions are approved for US-02 Login (#48).
 ### 12.2 JWT
 
 - Signing algorithm: HS256.
-- JWT issuer (`iss`): `rastro-api`.
+- JWT issuer (`iss`): `rastro-backend`.
 - JWT audience validation is not required for the MVP.
 - Access token lifetime: 900 seconds (15 minutes).
 - JWT subject (`sub`): user UUID.
@@ -1081,7 +1081,7 @@ Implementation shall follow the approved TDD plan in Section 10 and the implemen
 
 - Add the required Spring Security JWT dependencies.
 - Implement HS256 JWT issuance and validation.
-- Configure the approved issuer `rastro-api`.
+- Configure the approved issuer `rastro-backend`.
 - Configure the 900-second access-token lifetime.
 - Externalize JWT signing configuration.
 - Validate mandatory JWT configuration at application startup.
@@ -1194,7 +1194,7 @@ US-02 shall introduce:
 ### 16.4 Approved JWT Configuration
 
 - Algorithm: HS256.
-- Issuer: `rastro-api`.
+- Issuer: `rastro-backend`.
 - Access-token lifetime: 900 seconds.
 - Subject: user UUID.
 - Role claim: `USER` or `ADMIN`.
