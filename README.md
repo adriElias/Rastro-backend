@@ -1,87 +1,104 @@
-# Rastro - Persistence Infrastructure (Iteration 1)
+# Rastro Backend
 
-This iteration prepares only the Docker infrastructure for data persistence using PostgreSQL and Adminer.
+Spring Boot backend for RASTRO, targeting Java 21. Local development uses PostgreSQL and Adminer through Docker Compose.
 
-## Scope of this iteration
+## Local development stack
 
-- PostgreSQL container for persistence.
-- Adminer container for database administration.
-- Docker Compose orchestration.
-- Docker volume for persistent data.
-- Centralized environment variables in `.env`.
-- Private Docker network for service communication.
-- Folder structure ready for future backend/frontend and database migrations.
+- Java 21
+- Spring Boot 4.1.1
+- PostgreSQL 16
+- Adminer 4
+- Docker Compose
+- Flyway-managed database migrations
+- JPA schema validation
 
-## Target structure
+## Prerequisites
 
-```text
-project-root/
-├── docker-compose.yml
-├── .env
-├── .gitignore
-├── README.md
-├── backend/
-├── frontend/
-├── docs/
-├── database/
-│   └── migrations/
-└── docker/
+- Java 21
+- Docker with Docker Compose
+
+## Environment configuration
+
+Create the ignored local environment file from the committed template:
+
+```bash
+cp .env.example .env
 ```
 
-## Generated files explained
+Replace the password and JWT secret placeholders before starting the application. Never commit `.env` or use the example JWT secret outside local development.
 
-### `docker-compose.yml`
+Required variables:
 
-Defines:
-- `postgres` service:
-  - Image: `postgres:16-alpine`
-  - Database: `animal_reports`
-  - User: `animal_user`
-  - Password from `.env`
-  - Port mapping `${POSTGRES_PORT}:5432`
-  - Persistent volume `rastro_postgres_data`
-  - Connected to private network `rastro_internal_net`
-- `adminer` service:
-  - Image: `adminer:4`
-  - Port mapping `${ADMINER_PORT}:8080`
-  - Connected to the same private network
-  - Default DB server set to `postgres`
-- Custom private bridge network: `rastro_internal_net`
-- Named volume: `rastro_postgres_data`
+| Variable | Purpose |
+| --- | --- |
+| `COMPOSE_PROJECT_NAME` | Docker Compose project name. |
+| `POSTGRES_DB` | PostgreSQL database name. |
+| `POSTGRES_USER` | PostgreSQL user. |
+| `POSTGRES_PASSWORD` | PostgreSQL password. |
+| `POSTGRES_PORT` | Host port mapped to PostgreSQL. |
+| `ADMINER_PORT` | Host port mapped to Adminer. |
+| `JWT_SECRET` | Base64-encoded cryptographically random secret; the decoded key must contain at least 32 bytes. || `JWT_ISSUER` | Non-blank issuer used to create and validate JWTs. |
+| `JWT_ACCESS_TOKEN_TTL_SECONDS` | Positive access-token lifetime in seconds; the template uses `900`. |
 
-### `.env`
+The values in `.env.example` are local examples, not application defaults. Docker Compose reads `.env` automatically, but Spring Boot does not; export the variables before starting the backend.
 
-Centralized environment configuration:
-- `POSTGRES_DB=animal_reports`
-- `POSTGRES_USER=animal_user`
-- `POSTGRES_PASSWORD=...` (editable)
-- `POSTGRES_PORT=5432`
-- `ADMINER_PORT=8080`
-- `COMPOSE_PROJECT_NAME=rastro`
+The repository `.gitignore` excludes `.env` and local environment variants to prevent accidental secret commits.
 
-### `.gitignore`
+## Docker services
 
-Includes `.env` and local environment variants to avoid committing secrets accidentally.
+`docker-compose.yml` defines:
 
-### `database/migrations/`
+- `postgres`: `postgres:16-alpine`, exposed through `POSTGRES_PORT`, with data stored in the named volume `rastro_postgres_data`.
+- `adminer`: `adminer:4`, exposed through `ADMINER_PORT`, with `postgres` as its default database server.
+- Private bridge network: `rastro_internal_net`.
 
-Prepared for future Flyway SQL migration scripts, but Flyway is intentionally not configured in this iteration.
+## Start PostgreSQL and Adminer
 
-## How to run the containers
-
-From `project-root`:
+From `Rastro-backend`:
 
 ```bash
 docker compose up -d
+docker compose ps
 ```
 
-To stop:
+`docker compose ps` displays the current container status so you can confirm that PostgreSQL and Adminer are running.
+
+## Run the backend
+
+Export the local environment variables and start Spring Boot with the Maven wrapper:
+
+```bash
+set -a && source .env && set +a
+bash ./mvnw spring-boot:run
+```
+
+The backend starts at `http://localhost:8081`.
+
+## Flyway
+
+Flyway is enabled and applies migrations from:
+
+```text
+src/main/resources/db/migration
+```
+
+JPA uses `ddl-auto=validate`, so the database schema must match the Flyway-managed schema. Pending migrations are applied when the application starts.
+
+## Safe shutdown
+
+Stop the containers without removing containers, networks, or persisted data:
+
+```bash
+docker compose stop
+```
+
+Remove the Compose containers and networks while preserving named volumes:
 
 ```bash
 docker compose down
 ```
 
-To stop and remove persisted DB data volume:
+**Warning:** the following command also deletes the persisted local database volume. Use it only when an intentional data reset has been explicitly approved:
 
 ```bash
 docker compose down -v
@@ -96,9 +113,9 @@ Open:
 Use:
 - **System**: PostgreSQL
 - **Server**: `postgres`
-- **Username**: `animal_user`
+- **Username**: value from `POSTGRES_USER` in `.env`
 - **Password**: value from `POSTGRES_PASSWORD` in `.env`
-- **Database**: `animal_reports`
+- **Database**: value from `POSTGRES_DB` in `.env`
 
 ## Connect to PostgreSQL from IntelliJ IDEA
 
@@ -106,9 +123,9 @@ Use:
 2. Click **+ > Data Source > PostgreSQL**.
 3. Configure:
    - Host: `localhost`
-   - Port: `5432`
-   - Database: `animal_reports`
-   - User: `animal_user`
+   - Port: value from `POSTGRES_PORT` in `.env`
+   - Database: value from `POSTGRES_DB` in `.env`
+   - User: value from `POSTGRES_USER` in `.env`
    - Password: from `.env`
 4. Download driver if prompted.
 5. Click **Test Connection**, then **OK**.
@@ -119,18 +136,9 @@ Use:
 2. Select **PostgreSQL**.
 3. Configure:
    - Host: `localhost`
-   - Port: `5432`
-   - Database: `animal_reports`
-   - Username: `animal_user`
+   - Port: value from `POSTGRES_PORT` in `.env`
+   - Database: value from `POSTGRES_DB` in `.env`
+   - Username: value from `POSTGRES_USER` in `.env`
    - Password: from `.env`
 4. Click **Test Connection**.
 5. Click **Finish**.
-
-## Ready for next iterations
-
-This setup is intentionally prepared to add:
-- Spring Boot backend (Java 21, Hexagonal Architecture, DDD) in `backend/`
-- React frontend in `frontend/`
-- Flyway migrations as SQL files in `database/migrations/`
-
-No backend/frontend Dockerfiles, Flyway runtime configuration, or Java application code are included in this phase.
