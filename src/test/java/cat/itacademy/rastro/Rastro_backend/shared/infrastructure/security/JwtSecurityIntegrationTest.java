@@ -20,6 +20,14 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-
+import java.util.Arrays;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -43,6 +51,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Testcontainers
 @SpringBootTest(properties = {
@@ -271,5 +280,44 @@ class JwtSecurityIntegrationTest {
         String protectedEndpoint() {
             return "protected";
         }
+    }
+
+    @Test
+    void shouldRejectHs384TokenEvenWithMatchingSigningKey() {
+        byte[] signingKey = new byte[48];
+        Arrays.fill(signingKey, (byte) 42);
+
+        JwtSettings settings = new JwtSettings(
+                signingKey,
+                "rastro-backend",
+                Duration.ofMinutes(15)
+        );
+
+        JwtDecoder decoder = new SecurityConfiguration()
+                .jwtDecoder(settings);
+
+        NimbusJwtEncoder encoder =
+                new NimbusJwtEncoder(new ImmutableSecret<>(signingKey));
+
+        Instant now = Instant.now();
+
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer("rastro-backend")
+                .subject(UUID.randomUUID().toString())
+                .issuedAt(now)
+                .expiresAt(now.plus(Duration.ofMinutes(15)))
+                .claim("role", "USER")
+                .build();
+
+        JwsHeader header = JwsHeader.with(MacAlgorithm.HS384).build();
+
+        String token = encoder.encode(
+                JwtEncoderParameters.from(header, claims)
+        ).getTokenValue();
+
+        assertThrows(
+                JwtException.class,
+                () -> decoder.decode(token)
+        );
     }
 }
