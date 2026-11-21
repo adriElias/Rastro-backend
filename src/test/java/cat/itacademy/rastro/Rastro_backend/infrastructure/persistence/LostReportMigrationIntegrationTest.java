@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -37,6 +38,12 @@ class LostReportMigrationIntegrationTest {
 
     private static final OffsetDateTime CREATED_AT =
             OffsetDateTime.of(2026, 11, 17, 12, 0, 0, 0, ZoneOffset.UTC);
+    private static final UUID EXISTING_USER_ID =
+            UUID.fromString("2ebfb1dc-d7b1-4988-ac9a-52f9a427dc95");
+    private static final UUID EXISTING_LOCATION_ID =
+            UUID.fromString("4974a073-bbe1-40f0-9140-638a88bbd242");
+    private static final UUID EXISTING_POST_ID =
+            UUID.fromString("1fe919c3-f915-4434-ab1e-636eae16e7bc");
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -47,11 +54,12 @@ class LostReportMigrationIntegrationTest {
 
     private static Flyway flyway;
     private static String versionAfterFirstMigration;
+    private static String versionBeforeThirdMigration;
 
     private Connection connection;
 
     @BeforeAll
-    static void migrateFromV1ToLatest() {
+    static void migrateFromV1ToLatest() throws SQLException {
         Flyway v1Flyway = Flyway.configure()
                 .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
                 .target("1")
@@ -59,10 +67,66 @@ class LostReportMigrationIntegrationTest {
         v1Flyway.migrate();
         versionAfterFirstMigration = v1Flyway.info().current().getVersion().getVersion();
 
+        Flyway v2Flyway = Flyway.configure()
+                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .target("2")
+                .load();
+        v2Flyway.migrate();
+        versionBeforeThirdMigration = v2Flyway.info().current().getVersion().getVersion();
+        insertExistingCompatibleReport();
+
         flyway = Flyway.configure()
                 .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
                 .load();
         flyway.migrate();
+    }
+
+    private static void insertExistingCompatibleReport() throws SQLException {
+        try (Connection setupConnection = DriverManager.getConnection(
+                postgres.getJdbcUrl(),
+                postgres.getUsername(),
+                postgres.getPassword()
+        )) {
+            try (PreparedStatement statement = setupConnection.prepareStatement("""
+                    INSERT INTO app_user (id, name, last_name, email, password_hash)
+                    VALUES (?, 'Legacy', 'Owner', 'legacy@example.com', 'hash')
+                    """)) {
+                statement.setObject(1, EXISTING_USER_ID);
+                statement.executeUpdate();
+            }
+
+            try (PreparedStatement statement = setupConnection.prepareStatement("""
+                    INSERT INTO location (id, latitude, longitude)
+                    VALUES (?, 41.400000, 2.170000)
+                    """)) {
+                statement.setObject(1, EXISTING_LOCATION_ID);
+                statement.executeUpdate();
+            }
+
+            try (PreparedStatement statement = setupConnection.prepareStatement("""
+                    INSERT INTO post (
+                        id, user_id, title, photo, description, animal_type_id,
+                        created_date, last_update, publication_status_id,
+                        is_safekeeping, approx_age, post_type, location_id,
+                        search_radius, lost_at
+                    )
+                    VALUES (
+                        ?, ?, 'Existing lost dog', 'https://example.com/existing.jpg',
+                        'Existing report description',
+                        (SELECT id FROM animal_type WHERE title = 'DOG'), ?, ?,
+                        (SELECT id FROM publication_status WHERE title = 'ACTIVE'),
+                        FALSE, NULL, 'LOST', ?, 12.50, ?
+                    )
+                    """)) {
+                statement.setObject(1, EXISTING_POST_ID);
+                statement.setObject(2, EXISTING_USER_ID);
+                statement.setObject(3, CREATED_AT);
+                statement.setObject(4, CREATED_AT.plusHours(1));
+                statement.setObject(5, EXISTING_LOCATION_ID);
+                statement.setObject(6, CREATED_AT.minusHours(2));
+                statement.executeUpdate();
+            }
+        }
     }
 
     @BeforeEach
@@ -84,9 +148,9 @@ class LostReportMigrationIntegrationTest {
     }
 
     @Test
-    void shouldMigrateFromV1ToV2WithValidatedConstraints() throws SQLException {
+    void shouldMigrateFromV1ToLatestWithValidatedConstraints() throws SQLException {
         assertEquals("1", versionAfterFirstMigration);
-        assertEquals("2", flyway.info().current().getVersion().getVersion());
+        assertEquals("3", flyway.info().current().getVersion().getVersion());
 
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT data_type, is_nullable, column_default
@@ -133,6 +197,139 @@ class LostReportMigrationIntegrationTest {
             assertTrue(result.next());
             assertTrue(result.getString(1).contains("kilometers"));
         }
+    }
+
+    @Test
+    void shouldPreserveExistingNullAgePostAndLocationWhenMigratingFromV2ToV3() throws SQLException {
+        assertEquals("2", versionBeforeThirdMigration);
+        assertEquals("3", flyway.info().current().getVersion().getVersion());
+
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT p.id, p.user_id, p.title, p.photo, p.description,
+                       p.created_date, p.last_update, p.is_safekeeping,
+                       p.approx_age, p.age_unit, p.post_type, p.location_id,
+                       p.search_radius, p.lost_at,
+                       animal.title AS animal_type,
+                       status.title AS publication_status,
+                       location.latitude, location.longitude
+                FROM post p
+                JOIN animal_type animal ON animal.id = p.animal_type_id
+                JOIN publication_status status ON status.id = p.publication_status_id
+                JOIN location ON location.id = p.location_id
+                WHERE p.id = ?
+                """)) {
+            statement.setObject(1, EXISTING_POST_ID);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(EXISTING_POST_ID, result.getObject("id", UUID.class));
+                assertEquals(EXISTING_USER_ID, result.getObject("user_id", UUID.class));
+                assertEquals("Existing lost dog", result.getString("title"));
+                assertEquals("https://example.com/existing.jpg", result.getString("photo"));
+                assertEquals("Existing report description", result.getString("description"));
+                assertEquals(CREATED_AT, result.getObject("created_date", OffsetDateTime.class));
+                assertEquals(CREATED_AT.plusHours(1), result.getObject("last_update", OffsetDateTime.class));
+                assertFalse(result.getBoolean("is_safekeeping"));
+                assertNull(result.getObject("approx_age"));
+                assertNull(result.getObject("age_unit"));
+                assertEquals("LOST", result.getString("post_type"));
+                assertEquals(EXISTING_LOCATION_ID, result.getObject("location_id", UUID.class));
+                assertEquals(new BigDecimal("12.50"), result.getBigDecimal("search_radius"));
+                assertEquals(CREATED_AT.minusHours(2), result.getObject("lost_at", OffsetDateTime.class));
+                assertEquals("DOG", result.getString("animal_type"));
+                assertEquals("ACTIVE", result.getString("publication_status"));
+                assertEquals(new BigDecimal("41.400000"), result.getBigDecimal("latitude"));
+                assertEquals(new BigDecimal("2.170000"), result.getBigDecimal("longitude"));
+                assertFalse(result.next());
+            }
+        }
+    }
+
+    @Test
+    void shouldNormalizeApproximateAgeSchema() throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT column_name, data_type, udt_name, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'post'
+                  AND column_name IN ('approx_age', 'age_unit')
+                ORDER BY column_name
+                """);
+             ResultSet result = statement.executeQuery()) {
+            assertTrue(result.next());
+            assertEquals("age_unit", result.getString("column_name"));
+            assertEquals("USER-DEFINED", result.getString("data_type"));
+            assertEquals("age_unit_enum", result.getString("udt_name"));
+            assertEquals("YES", result.getString("is_nullable"));
+            assertNull(result.getString("column_default"));
+
+            assertTrue(result.next());
+            assertEquals("approx_age", result.getString("column_name"));
+            assertEquals("integer", result.getString("data_type"));
+            assertEquals("int4", result.getString("udt_name"));
+            assertEquals("YES", result.getString("is_nullable"));
+            assertNull(result.getString("column_default"));
+        }
+
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("""
+                     SELECT enumlabel
+                     FROM pg_enum
+                     WHERE enumtypid = 'age_unit_enum'::regtype
+                     ORDER BY enumsortorder
+                     """)) {
+            assertTrue(result.next());
+            assertEquals("MONTHS", result.getString("enumlabel"));
+            assertTrue(result.next());
+            assertEquals("YEARS", result.getString("enumlabel"));
+        }
+
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT conname, convalidated
+                FROM pg_constraint
+                WHERE conrelid = 'post'::regclass
+                  AND conname IN (
+                      'chk_post_approx_age_positive',
+                      'chk_post_approx_age_unit_pair'
+                  )
+                """);
+             ResultSet result = statement.executeQuery()) {
+            int constraintCount = 0;
+            while (result.next()) {
+                assertTrue(result.getBoolean("convalidated"));
+                constraintCount++;
+            }
+            assertEquals(2, constraintCount);
+        }
+    }
+
+    @Test
+    void shouldAcceptPositiveApproximateAgeWithMonthsOrYears() throws SQLException {
+        assertDoesNotThrow(() -> insertPostWithAge(createReferences(), 2, "MONTHS"));
+        assertDoesNotThrow(() -> insertPostWithAge(createReferences(), 3, "YEARS"));
+    }
+
+    @Test
+    void shouldRejectZeroApproximateAge() throws SQLException {
+        assertPostgresConstraintViolation("23514", "chk_post_approx_age_positive", () ->
+                insertPostWithAge(createReferences(), 0, "MONTHS"));
+    }
+
+    @Test
+    void shouldRejectNegativeApproximateAge() throws SQLException {
+        assertPostgresConstraintViolation("23514", "chk_post_approx_age_positive", () ->
+                insertPostWithAge(createReferences(), -1, "YEARS"));
+    }
+
+    @Test
+    void shouldRejectApproximateAgeWithoutUnit() throws SQLException {
+        assertPostgresConstraintViolation("23514", "chk_post_approx_age_unit_pair", () ->
+                insertPostWithAge(createReferences(), 3, null));
+    }
+
+    @Test
+    void shouldRejectAgeUnitWithoutApproximateAge() throws SQLException {
+        assertPostgresConstraintViolation("23514", "chk_post_approx_age_unit_pair", () ->
+                insertPostWithAge(createReferences(), null, "YEARS"));
     }
 
     @Test
@@ -420,6 +617,42 @@ class LostReportMigrationIntegrationTest {
             statement.setObject(7, references.locationId());
             statement.setBigDecimal(8, searchRadius);
             statement.setObject(9, lostAt);
+            statement.executeUpdate();
+        }
+    }
+
+    private void insertPostWithAge(
+            PostReferences references,
+            Integer approximateAge,
+            String ageUnit
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO post (
+                    id,
+                    user_id,
+                    title,
+                    description,
+                    animal_type_id,
+                    created_date,
+                    publication_status_id,
+                    post_type,
+                    location_id,
+                    search_radius,
+                    lost_at,
+                    approx_age,
+                    age_unit
+                )
+                VALUES (?, ?, 'Lost animal report', 'Description', ?, ?, ?, 'LOST', ?, 10.00, ?, ?, ?::age_unit_enum)
+                """)) {
+            statement.setObject(1, UUID.randomUUID());
+            statement.setObject(2, references.userId());
+            statement.setObject(3, references.animalTypeId());
+            statement.setObject(4, CREATED_AT);
+            statement.setObject(5, references.publicationStatusId());
+            statement.setObject(6, references.locationId());
+            statement.setObject(7, CREATED_AT.minusHours(2));
+            statement.setObject(8, approximateAge);
+            statement.setString(9, ageUnit);
             statement.executeUpdate();
         }
     }
