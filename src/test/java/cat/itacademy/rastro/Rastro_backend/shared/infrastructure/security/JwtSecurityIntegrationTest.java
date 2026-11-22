@@ -13,6 +13,9 @@ import cat.itacademy.rastro.Rastro_backend.user.domain.model.User;
 import cat.itacademy.rastro.Rastro_backend.user.domain.model.UserId;
 import cat.itacademy.rastro.Rastro_backend.user.domain.model.UserRole;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -30,6 +33,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -52,6 +56,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 @Testcontainers
 @SpringBootTest(properties = {
@@ -171,7 +178,12 @@ class JwtSecurityIntegrationTest {
     @Test
     void shouldRejectProtectedEndpointWithoutToken() throws Exception {
         mockMvc.perform(get("/test/protected"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, startsWith("Bearer")))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_FAILED"))
+                .andExpect(jsonPath("$.message").value("Authentication failed"))
+                .andExpect(jsonPath("$.fieldErrors.length()").value(0));
     }
 
     @Test
@@ -184,9 +196,14 @@ class JwtSecurityIntegrationTest {
 
     @Test
     void shouldRejectMalformedToken() throws Exception {
-        mockMvc.perform(get("/test/protected")
-                        .header(HttpHeaders.AUTHORIZATION, bearer("not-a-jwt")))
-                .andExpect(status().isUnauthorized());
+        assertInvalidTokenResponse("not-a-jwt");
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " ", "not-a-uuid", "1-1-1-1-1"})
+    void shouldRejectTokenWithInvalidSubject(String subject) throws Exception {
+        assertInvalidTokenResponse(issueTokenWithSubject(subject));
     }
 
     @Test
@@ -198,9 +215,7 @@ class JwtSecurityIntegrationTest {
                 Clock.fixed(issuedAt, ZoneOffset.UTC)
         );
 
-        mockMvc.perform(get("/test/protected")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isUnauthorized());
+        assertInvalidTokenResponse(token);
     }
 
     @Test
@@ -211,9 +226,7 @@ class JwtSecurityIntegrationTest {
                 Clock.systemUTC()
         );
 
-        mockMvc.perform(get("/test/protected")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isUnauthorized());
+        assertInvalidTokenResponse(token);
     }
 
     @Test
@@ -224,9 +237,22 @@ class JwtSecurityIntegrationTest {
                 Clock.systemUTC()
         );
 
-        mockMvc.perform(get("/test/protected")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isUnauthorized());
+        assertInvalidTokenResponse(token);
+    }
+
+    private void assertInvalidTokenResponse(String token) throws Exception {
+        ResultActions result = mockMvc.perform(get("/test/protected")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)));
+
+        result.andExpect(status().isUnauthorized())
+                .andExpect(header().string(
+                        HttpHeaders.WWW_AUTHENTICATE,
+                        containsString("error=\"invalid_token\"")
+                ))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_FAILED"))
+                .andExpect(jsonPath("$.message").value("Authentication failed"))
+                .andExpect(jsonPath("$.fieldErrors.length()").value(0));
     }
 
     private String validToken() {
@@ -241,6 +267,24 @@ class JwtSecurityIntegrationTest {
                 clock
         );
         return tokenIssuer.issueAccessToken(activeUser());
+    }
+
+    private String issueTokenWithSubject(String subject) {
+        NimbusJwtEncoder encoder = new NimbusJwtEncoder(new ImmutableSecret<>(SIGNING_KEY));
+        Instant now = Instant.now();
+        var claims = JwtClaimsSet.builder()
+                .issuer("rastro-backend")
+                .issuedAt(now)
+                .expiresAt(now.plus(Duration.ofMinutes(15)))
+                .claim("role", "USER");
+        if (subject != null) {
+            claims.claim("sub", subject);
+        }
+
+        return encoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).build(),
+                claims.build()
+        )).getTokenValue();
     }
 
     private User activeUser() {

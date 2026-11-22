@@ -7,6 +7,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -21,7 +22,10 @@ import javax.crypto.spec.SecretKeySpec;
 public class SecurityConfiguration {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            ApiAuthenticationEntryPoint authenticationEntryPoint
+    ) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session
@@ -38,6 +42,7 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
+                        .authenticationEntryPoint(authenticationEntryPoint)
                         .jwt(Customizer.withDefaults()));
 
         return http.build();
@@ -49,8 +54,9 @@ public class SecurityConfiguration {
                 .withSecretKey(new SecretKeySpec(jwtSettings.signingKey(), "HmacSHA256"))
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
-        OAuth2TokenValidator<Jwt> validator = JwtValidators.createDefaultWithIssuer(
-                jwtSettings.issuer()
+        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(jwtSettings.issuer()),
+                new JwtSubjectValidator()
         );
         jwtDecoder.setJwtValidator(validator);
         return jwtDecoder;
